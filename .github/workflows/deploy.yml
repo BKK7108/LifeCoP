@@ -1,1 +1,50 @@
-
+name: build-and-deploy
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch: {}
+jobs:
+  build-deploy:
+    permissions: { id-token: write, contents: read }
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      REGION: ${{ secrets.GKE_LOCATION }}
+      CLUSTER: ${{ secrets.GKE_CLUSTER }}
+      AR_REPO: ${{ secrets.AR_REPO }}
+      IMG_TX: ${{ secrets.AR_REPO }}/transactions-tool
+      IMG_CP: ${{ secrets.AR_REPO }}/copilot-v0
+      SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - run: gcloud auth configure-docker europe-west2-docker.pkg.dev -q
+      - name: Build & push transactions-tool
+        run: |
+          docker build -t "$IMG_TX:$SHA" ./services/transactions-tool
+          docker push "$IMG_TX:$SHA"
+          docker tag "$IMG_TX:$SHA" "$IMG_TX:latest"
+          docker push "$IMG_TX:latest"
+      - name: Build & push copilot-v0
+        run: |
+          docker build -t "$IMG_CP:$SHA" ./services/copilot-v0
+          docker push "$IMG_CP:$SHA"
+          docker tag "$IMG_CP:$SHA" "$IMG_CP:latest"
+          docker push "$IMG_CP:latest"
+      - uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ secrets.GKE_CLUSTER }}
+          location: ${{ secrets.GKE_LOCATION }}
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+      - name: Update deployments
+        run: |
+          kubectl -n agents set image deploy/transactions-tool api="$IMG_TX:$SHA"
+          kubectl -n agents set image deploy/copilot-v0        api="$IMG_CP:$SHA"
+      - name: Wait for rollout
+        run: |
+          kubectl -n agents rollout status deploy/transactions-tool --timeout=180s
+          kubectl -n agents rollout status deploy/copilot-v0        --timeout=180s
