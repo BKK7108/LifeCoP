@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sa-copilot-v0
+  namespace: agents
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: copilot-v0
+  namespace: agents
+  labels:
+    app: copilot-v0
+    agents.bal/risk-approved: "true"
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: copilot-v0 }
+  template:
+    metadata:
+      labels:
+        app: copilot-v0
+        agents.bal/risk-approved: "true"
+    spec:
+      serviceAccountName: sa-copilot-v0
+      containers:
+      - name: api
+        image: europe-west2-docker.pkg.dev/rugged-truck-462809-f7/app-images/copilot-v0:0.1
+        ports: [{ containerPort: 8080 }]
+        env:
+        - { name: TX_TOOL_URL, value: "http://transactions-tool.agents.svc.cluster.local:8080" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: copilot-v0
+  namespace: agents
+spec:
+  selector: { app: copilot-v0 }
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080

@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sa-transactions-tool
+  namespace: agents
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: transactions-tool
+  namespace: agents
+  labels:
+    app: transactions-tool
+    agents.bal/risk-approved: "true"
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: transactions-tool }
+  template:
+    metadata:
+      labels:
+        app: transactions-tool
+        agents.bal/risk-approved: "true"
+    spec:
+      serviceAccountName: sa-transactions-tool
+      containers:
+      - name: api
+        image: europe-west2-docker.pkg.dev/rugged-truck-462809-f7/app-images/transactions-tool:0.1
+        ports: [{ containerPort: 8080 }]
+        env:
+        - { name: TX_API_URL,  value: "http://transactionhistory.boa.svc.cluster.local" }
+        - { name: BAL_API_URL, value: "http://balancereader.boa.svc.cluster.local" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: transactions-tool
+  namespace: agents
+spec:
+  selector: { app: transactions-tool }
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
